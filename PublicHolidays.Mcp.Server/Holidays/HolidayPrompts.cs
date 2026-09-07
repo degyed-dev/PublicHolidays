@@ -24,7 +24,7 @@ public sealed class HolidayPrompts
                     Role = Role.User,
                     Content = new TextContentBlock
                     {
-                        Text = $"Using the Globomantics MCP tools, what are the best times to take a break in Hungary in {year} if I have {maxVacationDays} vacation days to spend?"
+                        Text = $"Using the PublicHolidays MCP tools, what are the best times to take a break in Hungary in {year} if I have {maxVacationDays} vacation days to spend?"
                     }
                 }
             ]

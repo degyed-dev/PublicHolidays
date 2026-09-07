@@ -1,14 +1,133 @@
-# PublicHolidays MCP Server
+# PublicHolidays MCP Server — .NET
 
-A [Model Context Protocol](https://spec.modelcontextprotocol.io/) server built with the official [ModelContextProtocol .NET SDK](https://github.com/modelcontextprotocol/csharp-sdk).
+A [Model Context Protocol](https://spec.modelcontextprotocol.io/) server that helps AI assistants plan holidays and long weekends for Hungary. Built with C# / .NET 10 and the official [ModelContextProtocol .NET SDK](https://github.com/modelcontextprotocol/csharp-sdk).
 
-## Running the server
+---
 
-**Locally (development):**
+## Purpose
+
+This server exposes Hungarian public holiday data to any MCP-compatible AI assistant (Claude Code, VS Code Copilot, etc.). It lets the assistant answer questions like:
+
+- "When is the next public holiday in Hungary?"
+- "What are the best long weekends I can take without using any vacation days?"
+- "If I have 3 vacation days, what is the longest break I can create around Hungarian holidays in 2026?"
+
+---
+
+## Architecture
+
+```
+MCP Client (Claude Code / VS Code / …)
+          |
+          | MCP over stdio
+          v
+  PublicHolidays.Mcp.Server  (.NET 10)
+          |
+          v
+  Nager.Date API  (https://nagerholidays.com)
+```
+
+The server communicates over **stdio** and is registered as a local MCP server in `~/.claude.json` or `.vscode/mcp.json`.
+
+---
+
+## Main features
+
+- Fetch Hungarian public holidays from [Nager.Holidays](https://nagerholidays.com) with 24-hour in-memory caching
+- Find long weekends (3+ consecutive days) that arise naturally from holidays — no vacation days needed
+- Rank the best multi-day breaks for a given year and vacation-day budget
+- Check whether any specific date is a public holiday
+- Find the next upcoming public holiday from any given date
+- Expose raw holiday data and calendar events as MCP Resources
+- Offer a reusable vacation-planning prompt template
+
+---
+
+## MCP concepts used
+
+### Tools
+
+Four tools are registered. Each tool is callable by the AI assistant with strongly typed parameters.
+
+| Tool | Parameters | Description |
+|---|---|---|
+| `find_long_weekends` | `year` (int, 2000–2100) | Returns all 3+ day stretches that require zero vacation days |
+| `find_best_time_off` | `year` (int), `maxVacationDays` (int, 0–10) | Returns the best stretches combining weekends, holidays, and vacation days |
+| `is_public_holiday` | `date` (yyyy-MM-dd) | Checks whether a specific date is a Hungarian public holiday |
+| `get_next_public_holiday` | `fromDate` (yyyy-MM-dd) | Returns the next Hungarian public holiday on or after the given date |
+
+### Prompts
+
+One prompt template is registered. A prompt is a reusable message template the AI client can invoke with arguments to pre-fill a conversation.
+
+| Prompt | Arguments | Rendered message |
+|---|---|---|
+| `best_time_off` | `year` (int), `maxVacationDays` (int) | "Using the PublicHolidays MCP tools, what are the best times to take a break in Hungary in {year} if I have {maxVacationDays} vacation days to spend?" |
+
+### Resources
+
+Three resources are exposed over the MCP resource protocol.
+
+| URI | Description |
+|---|---|
+| `holidays://HU/{year}` | Hungarian public holidays for the given year, as JSON |
+| `calendar://events` | All upcoming calendar events (static demo data) |
+| `calendar://events/{id}` | A single calendar event by ID |
+
+---
+
+## Project structure
+
+```
+PublicHolidays/
+  PublicHolidays.Mcp.Server/
+    Program.cs                        ← Host setup and MCP server registration
+    Holidays/
+      HolidayTools.cs                 ← MCP tool registrations + calculation logic
+      HolidayToolModels.cs            ← Tool result record types
+      HolidaysModels.cs               ← Domain model (HolidayItem, HolidaysResponse)
+      HolidaysResource.cs             ← holidays://HU/{year} resource
+      HolidayPrompts.cs               ← best_time_off prompt
+      NagerHolidaysService.cs         ← Nager.Date HTTP client + cache
+      NagerHolidayDto.cs              ← Raw Nager.Date API DTO
+    Calendar/
+      CalendarResources.cs            ← calendar://events resources (static data)
+    appsettings.json
+    package.json                      ← npm dev script (MCP Inspector)
+
+  PublicHolidays.Mcp.Server.Tests/
+    Holidays/
+      HolidayToolsTests.cs            ← 14 unit tests for tools and calculations
+      NagerHolidaysServiceTests.cs    ← 5 unit tests for the HTTP service + cache
+```
+
+---
+
+## Prerequisites
+
+- [.NET 10 SDK](https://dotnet.microsoft.com/download) or later
+- (Optional) [Node.js ≥ 18](https://nodejs.org) for the MCP Inspector dev script
+
+---
+
+## Installation
+
+```bash
+cd PublicHolidays
+dotnet restore
+```
+
+---
+
+## Local development
+
+**With MCP Inspector** (recommended — starts a browser-based MCP testing UI):
 
 ```bash
 npm run dev
 ```
+
+This runs `npx @modelcontextprotocol/inspector dotnet run` inside the server project.
 
 **Directly with .NET:**
 
@@ -16,221 +135,53 @@ npm run dev
 dotnet run --project PublicHolidays.Mcp.Server/PublicHolidays.Mcp.Server.csproj
 ```
 
-The server communicates over **stdio** and is registered in `~/.claude.json` for Claude Code.
+The server starts and waits for MCP messages on stdin/stdout.
 
 ---
 
-## Available Resources
+## Build
 
-| URI Template | Description |
-|---|---|
-| `calendar://events` | All upcoming PublicHolidays calendar events |
-| `calendar://events/{id}` | A single calendar event by ID |
-| `holidays://HU/{year}` | Hungarian public holidays for the given year (2000–2100) |
-
-## Available Prompts
-
-| Prompt | Arguments | Description |
-|---|---|---|
-| `best_time_off` | `year` (int), `maxVacationDays` (int) | Generates a prompt for finding the best times to take a break in Hungary for a given year and vacation-day budget |
-
-Invoke with `/mcp__publicholidays__best_time_off` in Claude Code, or via `prompts/get` over the MCP protocol:
-
-```json
-{
-  "method": "prompts/get",
-  "params": {
-    "name": "best_time_off",
-    "arguments": { "year": "2026", "maxVacationDays": "3" }
-  }
-}
-```
-
-Rendered message sent to the LLM:
-```
-Using the Globomantics MCP tools, what are the best times to take a break in Hungary in 2026 if I have 3 vacation days to spend?
+```bash
+dotnet build
 ```
 
 ---
 
-## Available Tools
+## Running the MCP server
 
-| Tool | Description |
-|---|---|
-| `get_next_public_holiday` | Returns the next Hungarian public holiday on or after a given date |
-| `is_public_holiday` | Checks whether a specific date is a Hungarian public holiday |
-| `find_long_weekends` | Finds long weekends (3+ days) that arise naturally from holidays, no vacation days needed |
-| `find_best_time_off` | Finds the best stretches of consecutive days off combining holidays, weekends, and a limited number of vacation days |
+The server communicates over stdio. It is not a standalone HTTP server — it is launched by the MCP client.
 
----
+**From Claude Code:** register it in `~/.claude.json` (see [Configuration](#configuration) below) and Claude Code will start it automatically.
 
-## Example: All Calendar Events
-
-Request:
-```
-calendar://events
-```
-
-Response:
-```json
-[
-  {
-    "id": "1",
-    "title": "Daily Standup",
-    "start": "2026-09-04T09:00:00",
-    "end": "2026-09-04T09:15:00",
-    "location": "Conference Room A"
-  },
-  {
-    "id": "3",
-    "title": "Sprint Planning",
-    "start": "2026-09-07T10:00:00",
-    "end": "2026-09-07T12:00:00",
-    "location": "Conference Room B"
-  },
-  {
-    "id": "33",
-    "title": "Q4 Planning Workshop",
-    "start": "2026-09-28T09:00:00",
-    "end": "2026-09-28T17:00:00",
-    "location": "Offsite — Innovation Hub"
-  }
-]
-```
+**From VS Code:** the `.vscode/mcp.json` file in this repo registers the server for VS Code Copilot automatically.
 
 ---
 
-## Example: Single Calendar Event by ID
+## Testing
 
-Request:
-```
-calendar://events/7
-```
-
-Response:
-```json
-{
-  "id": "7",
-  "title": "Architecture Planning",
-  "start": "2026-09-09T13:00:00",
-  "end": "2026-09-09T14:30:00",
-  "location": "Conference Room C"
-}
+```bash
+dotnet test PublicHolidays.Mcp.Server.Tests/PublicHolidays.Mcp.Server.Tests.csproj
 ```
 
-When the ID does not exist:
+The test suite has 19 tests covering:
 
-Request:
-```
-calendar://events/99
-```
-
-Response:
-```json
-{
-  "error": "Event '99' not found"
-}
-```
+- Long weekend calculation (Friday/Monday/Saturday/Sunday holidays, adjacent holidays)
+- Best-time-off calculation (0, 1, 2 vacation days; mid-week only holidays; domination filter)
+- Tool parameter validation (`maxVacationDays` out of range, invalid date format, invalid year)
+- `is_public_holiday` (hit, miss, bad format)
+- `get_next_public_holiday` (first holiday, mid-year, invalid date)
+- `NagerHolidaysService` (success, HTTP 500, network error, 24 h cache)
 
 ---
 
-## Example: Hungarian Public Holidays
+## Example MCP usage
 
-Request:
-```
-holidays://HU/2026
-```
+### find_long_weekends
 
-Response:
-```json
-{
-  "countryCode": "HU",
-  "year": 2026,
-  "source": "Nager.Holidays",
-  "holidays": [
-    {
-      "date": "2026-01-01",
-      "name": "New Year's Day",
-      "dayOfWeek": "Thursday",
-      "nationalHoliday": true,
-      "holidayTypes": ["Public"]
-    },
-    {
-      "date": "2026-03-15",
-      "name": "1848 Revolution Memorial Day",
-      "dayOfWeek": "Sunday",
-      "nationalHoliday": true,
-      "holidayTypes": ["Public"]
-    }
-  ]
-}
-```
-
-Holiday data is fetched from [Nager.Holidays](https://nagerholidays.com) and cached in memory for 24 hours.
-
----
-
-## Example: Get Next Public Holiday
-
-Request:
-```json
-{ "fromDate": "2026-09-04" }
-```
-
-Response:
-```json
-{
-  "holidayDate": "2026-10-23",
-  "holidayName": "1956 Revolution Memorial Day",
-  "dayOfWeek": "Friday",
-  "daysUntil": 49
-}
-```
-
----
-
-## Example: Check if a Date is a Public Holiday
-
-Request:
-```json
-{ "date": "2026-08-20" }
-```
-
-Response — it is a holiday:
-```json
-{
-  "date": "2026-08-20",
-  "isPublicHoliday": true,
-  "holidayName": "State Foundation Day",
-  "dayOfWeek": "Thursday"
-}
-```
-
-Request:
-```json
-{ "date": "2026-09-04" }
-```
-
-Response — not a holiday:
-```json
-{
-  "date": "2026-09-04",
-  "isPublicHoliday": false,
-  "holidayName": null,
-  "dayOfWeek": "Friday"
-}
-```
-
----
-
-## Example: Find Long Weekends
-
-Request:
 ```json
 { "year": 2026 }
 ```
 
-Response:
 ```json
 [
   {
@@ -248,80 +199,17 @@ Response:
     "endDate": "2026-05-03",
     "consecutiveDays": 3,
     "vacationDaysRequired": 0
-  },
-  {
-    "holidayName": "Christmas Day",
-    "holidayDate": "2026-12-25",
-    "startDate": "2026-12-25",
-    "endDate": "2026-12-27",
-    "consecutiveDays": 3,
-    "vacationDaysRequired": 0
   }
 ]
 ```
 
-Results are grouped per holiday — multiple holidays sharing the same stretch each appear as a separate entry.
-
----
-
-## Example: Find Best Time Off
-
-Request:
-```json
-{ "year": 2027, "maxVacationDays": 2 }
-```
-
-Response (top results, ranked by consecutive days then fewest vacation days):
-```json
-[
-  {
-    "startDate": "2027-03-24",
-    "endDate": "2027-03-29",
-    "consecutiveDays": 6,
-    "vacationDaysRequired": 2,
-    "vacationDates": ["2027-03-24", "2027-03-25"],
-    "publicHolidays": [
-      "2027-03-26: Good Friday",
-      "2027-03-28: Easter Sunday",
-      "2027-03-29: Easter Monday"
-    ]
-  },
-  {
-    "startDate": "2027-01-01",
-    "endDate": "2027-01-05",
-    "consecutiveDays": 5,
-    "vacationDaysRequired": 2,
-    "vacationDates": ["2027-01-04", "2027-01-05"],
-    "publicHolidays": ["2027-01-01: New Year's Day"]
-  }
-]
-```
-
-`vacationDates` lists exactly which weekdays to take off to achieve the stretch. `maxVacationDays` accepts 0–10.
-
----
-
-## Example Prompts
-
-The prompts below illustrate how an AI assistant should invoke the tools. Each section shows the natural-language prompt and the tool call it maps to.
-
-### find_long_weekends
-
-> "Using the globomantics MCP tools, find all natural long weekends in Hungary in 2026 that don't require any vacation days."
-
-```json
-{ "year": 2026 }
-```
+Results are grouped per holiday — if multiple holidays fall in the same stretch, each appears as a separate entry.
 
 ### find_best_time_off
-
-> "Using the globomantics MCP tools, what are the best times to take a break in Hungary in 2026 if I have 2 vacation days to spend?"
 
 ```json
 { "year": 2026, "maxVacationDays": 2 }
 ```
-
-Top results (ranked by consecutive days, then fewest vacation days):
 
 ```json
 [
@@ -336,27 +224,13 @@ Top results (ranked by consecutive days, then fewest vacation days):
       "2026-04-05: Easter Sunday",
       "2026-04-06: Easter Monday"
     ]
-  },
-  {
-    "startDate": "2026-01-01",
-    "endDate": "2026-01-05",
-    "consecutiveDays": 5,
-    "vacationDaysRequired": 2,
-    "vacationDates": ["2026-01-02", "2026-01-05"],
-    "publicHolidays": ["2026-01-01: New Year's Day"]
   }
 ]
 ```
 
-> "Using the globomantics MCP tools, plan the most efficient 2-vacation-day breaks around Hungarian public holidays in 2027."
-
-```json
-{ "year": 2027, "maxVacationDays": 2 }
-```
+`vacationDates` lists the exact weekdays to take off to achieve the stretch.
 
 ### is_public_holiday
-
-> "Using the globomantics MCP tools, is 2026-08-20 a Hungarian public holiday?"
 
 ```json
 { "date": "2026-08-20" }
@@ -371,18 +245,10 @@ Top results (ranked by consecutive days, then fewest vacation days):
 }
 ```
 
-> "Use globomantics to check if 2026-12-26 is a Hungarian public holiday."
-
-```json
-{ "date": "2026-12-26" }
-```
-
 ### get_next_public_holiday
 
-> "Using the globomantics MCP tools, when is the next Hungarian public holiday after today?"
-
 ```json
-{ "fromDate": "2026-09-07" }
+{ "fromDate": "2026-09-04" }
 ```
 
 ```json
@@ -390,41 +256,151 @@ Top results (ranked by consecutive days, then fewest vacation days):
   "holidayDate": "2026-10-23",
   "holidayName": "1956 Revolution Memorial Day",
   "dayOfWeek": "Friday",
-  "daysUntil": 46
+  "daysUntil": 49
 }
 ```
 
-> "Use globomantics to find the next Hungarian public holiday after 2026-10-15."
+### holidays://HU/{year} resource
+
+```
+holidays://HU/2026
+```
 
 ```json
-{ "fromDate": "2026-10-15" }
+{
+  "countryCode": "HU",
+  "year": 2026,
+  "source": "Nager.Holidays",
+  "holidays": [
+    {
+      "date": "2026-01-01",
+      "name": "New Year's Day",
+      "dayOfWeek": "Thursday",
+      "nationalHoliday": true,
+      "holidayTypes": ["Public"]
+    }
+  ]
+}
 ```
-
-### Combined with calendar
-
-These prompts combine the holiday tools with the `calendar://events` resource to cross-reference a personal calendar:
-
-- "Show me the long weekends in 2026 where I don't have a Planning meeting."
-- "Find long weekends where there is no Planning event in my calendar."
-- "Find the best long weekends in 2026 where I need at most 2 vacation days and I don't have Planning in my calendar."
-- "Which long weekend is best for me based on my calendar?"
-- "Find me a 4-day break where I don't have any Planning meetings."
-
-The assistant should call `find_long_weekends` or `find_best_time_off`, then read `calendar://events`, and filter the results to exclude stretches that overlap with any calendar event whose title contains "Planning".
 
 ---
 
-## Running the tests
+## Example Claude Code usage
+
+Ask Claude naturally — it selects the right tool automatically:
+
+```
+"Find all long weekends in Hungary in 2026 that don't require any vacation days."
+"What are the best times to take a break in Hungary in 2026 if I have 3 vacation days?"
+"Is 2026-08-20 a Hungarian public holiday?"
+"When is the next Hungarian public holiday after today?"
+```
+
+**Combined with the calendar resource:**
+
+```
+"Show me the long weekends in 2026 where I don't have a Planning meeting."
+"Find the best long weekend in 2026 where I need at most 2 vacation days and don't have Planning in my calendar."
+```
+
+Claude will call `find_long_weekends` or `find_best_time_off`, read `calendar://events`, and filter results against your calendar events.
+
+---
+
+## Configuration
+
+### Claude Code (`~/.claude.json`)
+
+```json
+{
+  "mcpServers": {
+    "publicholidays": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "/path/to/PublicHolidays/PublicHolidays.Mcp.Server/PublicHolidays.Mcp.Server.csproj",
+        "--no-build"
+      ]
+    }
+  }
+}
+```
+
+Or from the Claude Code CLI:
 
 ```bash
-dotnet test PublicHolidays.Mcp.Server.Tests/PublicHolidays.Mcp.Server.Tests.csproj
+claude mcp add \
+  --transport stdio \
+  publicholidays \
+  dotnet -- run --project /path/to/PublicHolidays.Mcp.Server/PublicHolidays.Mcp.Server.csproj --no-build
+```
+
+### VS Code (`.vscode/mcp.json`)
+
+The `.vscode/mcp.json` in the repo root already registers the server:
+
+```json
+{
+  "servers": {
+    "publicholidays-mcp-servers": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": ["run", "--project", "PublicHolidays.Mcp.Server/PublicHolidays.Mcp.Server.csproj"]
+    }
+  }
+}
+```
+
+### Using the `best_time_off` prompt
+
+In Claude Code, type:
+
+```
+/mcp__publicholidays__best_time_off
+```
+
+You will be prompted for `year` and `maxVacationDays`. The server fills in the message template and sends it to the LLM.
+
+You can also invoke it directly over MCP:
+
+```json
+{
+  "method": "prompts/get",
+  "params": {
+    "name": "best_time_off",
+    "arguments": { "year": "2026", "maxVacationDays": "3" }
+  }
+}
 ```
 
 ---
 
-## Testing from an MCP client
+## Security considerations
 
-You can smoke-test any resource with the Python script below:
+- Holiday data is fetched from [Nager.Holidays](https://nagerholidays.com), an external public API. No API key is required.
+- The server runs locally and communicates only over stdio — it is not exposed to the network.
+- No secrets, credentials, or personally identifiable data are stored or transmitted.
+- Calendar event data in this project is static demo data. In a production scenario, replace it with a proper calendar integration that respects data privacy requirements.
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `Unable to reach the holidays service` | No internet connection or Nager.Holidays is down | Check network; retry later |
+| `Year must be between 2000 and 2100` | Out-of-range year passed to a tool | Use a year within 2000–2100 |
+| `Invalid date … Expected format: yyyy-MM-dd` | Wrong date format | Pass dates as `yyyy-MM-dd`, e.g. `2026-08-20` |
+| Server does not appear in Claude Code | Path in `~/.claude.json` is wrong | Use an absolute path to the `.csproj` file |
+| Build fails | Wrong .NET SDK version | Ensure .NET 10 SDK is installed |
+
+---
+
+## Smoke-test with Python
+
+You can manually test any resource from the command line:
 
 ```python
 import subprocess, json
@@ -456,3 +432,13 @@ print(json.dumps(recv(), indent=2))
 proc.stdin.close()
 proc.wait()
 ```
+
+---
+
+## Future improvements
+
+- Support additional countries beyond Hungary
+- Configurable country code via environment variable or MCP argument
+- Replace static calendar data with a real calendar integration (e.g., Google Calendar, Outlook)
+- Add authentication for calendar resources
+- Expose a `holidays://` resource listing all supported countries
