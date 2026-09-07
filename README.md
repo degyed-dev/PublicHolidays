@@ -4,6 +4,14 @@ A [Model Context Protocol](https://spec.modelcontextprotocol.io/) server built w
 
 ## Running the server
 
+**Locally (development):**
+
+```bash
+npm run dev
+```
+
+**Directly with .NET:**
+
 ```bash
 dotnet run --project PublicHolidays.Mcp.Server/PublicHolidays.Mcp.Server.csproj
 ```
@@ -265,6 +273,119 @@ Response (top results, ranked by consecutive days then fewest vacation days):
 ```
 
 `vacationDates` lists exactly which weekdays to take off to achieve the stretch. `maxVacationDays` accepts 0–10.
+
+---
+
+## Example Prompts
+
+The prompts below illustrate how an AI assistant should invoke the tools. Each section shows the natural-language prompt and the tool call it maps to.
+
+### find_long_weekends
+
+> "Using the globomantics MCP tools, find all natural long weekends in Hungary in 2026 that don't require any vacation days."
+
+```json
+{ "year": 2026 }
+```
+
+### find_best_time_off
+
+> "Using the globomantics MCP tools, what are the best times to take a break in Hungary in 2026 if I have 2 vacation days to spend?"
+
+```json
+{ "year": 2026, "maxVacationDays": 2 }
+```
+
+Top results (ranked by consecutive days, then fewest vacation days):
+
+```json
+[
+  {
+    "startDate": "2026-04-01",
+    "endDate": "2026-04-06",
+    "consecutiveDays": 6,
+    "vacationDaysRequired": 2,
+    "vacationDates": ["2026-04-01", "2026-04-02"],
+    "publicHolidays": [
+      "2026-04-03: Good Friday",
+      "2026-04-05: Easter Sunday",
+      "2026-04-06: Easter Monday"
+    ]
+  },
+  {
+    "startDate": "2026-01-01",
+    "endDate": "2026-01-05",
+    "consecutiveDays": 5,
+    "vacationDaysRequired": 2,
+    "vacationDates": ["2026-01-02", "2026-01-05"],
+    "publicHolidays": ["2026-01-01: New Year's Day"]
+  }
+]
+```
+
+> "Using the globomantics MCP tools, plan the most efficient 2-vacation-day breaks around Hungarian public holidays in 2027."
+
+```json
+{ "year": 2027, "maxVacationDays": 2 }
+```
+
+### is_public_holiday
+
+> "Using the globomantics MCP tools, is 2026-08-20 a Hungarian public holiday?"
+
+```json
+{ "date": "2026-08-20" }
+```
+
+```json
+{
+  "date": "2026-08-20",
+  "isPublicHoliday": true,
+  "holidayName": "State Foundation Day",
+  "dayOfWeek": "Thursday"
+}
+```
+
+> "Use globomantics to check if 2026-12-26 is a Hungarian public holiday."
+
+```json
+{ "date": "2026-12-26" }
+```
+
+### get_next_public_holiday
+
+> "Using the globomantics MCP tools, when is the next Hungarian public holiday after today?"
+
+```json
+{ "fromDate": "2026-09-07" }
+```
+
+```json
+{
+  "holidayDate": "2026-10-23",
+  "holidayName": "1956 Revolution Memorial Day",
+  "dayOfWeek": "Friday",
+  "daysUntil": 46
+}
+```
+
+> "Use globomantics to find the next Hungarian public holiday after 2026-10-15."
+
+```json
+{ "fromDate": "2026-10-15" }
+```
+
+### Combined with calendar
+
+These prompts combine the holiday tools with the `calendar://events` resource to cross-reference a personal calendar:
+
+- "Show me the long weekends in 2026 where I don't have a Planning meeting."
+- "Find long weekends where there is no Planning event in my calendar."
+- "Find the best long weekends in 2026 where I need at most 2 vacation days and I don't have Planning in my calendar."
+- "Which long weekend is best for me based on my calendar?"
+- "Find me a 4-day break where I don't have any Planning meetings."
+
+The assistant should call `find_long_weekends` or `find_best_time_off`, then read `calendar://events`, and filter the results to exclude stretches that overlap with any calendar event whose title contains "Planning".
 
 ---
 
