@@ -28,6 +28,31 @@ The server communicates over **stdio** and is registered in `~/.claude.json` for
 | `calendar://events/{id}` | A single calendar event by ID |
 | `holidays://HU/{year}` | Hungarian public holidays for the given year (2000–2100) |
 
+## Available Prompts
+
+| Prompt | Arguments | Description |
+|---|---|---|
+| `best_time_off` | `year` (int), `maxVacationDays` (int) | Generates a prompt for finding the best times to take a break in Hungary for a given year and vacation-day budget |
+
+Invoke with `/mcp__publicholidays__best_time_off` in Claude Code, or via `prompts/get` over the MCP protocol:
+
+```json
+{
+  "method": "prompts/get",
+  "params": {
+    "name": "best_time_off",
+    "arguments": { "year": "2026", "maxVacationDays": "3" }
+  }
+}
+```
+
+Rendered message sent to the LLM:
+```
+Using the Globomantics MCP tools, what are the best times to take a break in Hungary in 2026 if I have 3 vacation days to spend?
+```
+
+---
+
 ## Available Tools
 
 | Tool | Description |

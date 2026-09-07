@@ -20,7 +20,8 @@ builder.Services.AddMcpServer()
     .WithStdioServerTransport()
     .WithResources<CalendarResources>()
     .WithResources<HolidaysResource>()
-    .WithTools<HolidayTools>();
+    .WithTools<HolidayTools>()
+    .WithPrompts<HolidayPrompts>();
 
 builder.Logging.AddConsole(options =>
 {
