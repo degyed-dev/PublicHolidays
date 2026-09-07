@@ -1,0 +1,6 @@
+{
+    "scripts": {
+        "start": "dotnet run",
+        "dev": "npx @modelcontextprotocol/inspector dotnet run"
+    }
+}

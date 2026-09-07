@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "publicholidays-mcp-servers": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "PublicHolidays.Mcp.Server/PublicHolidays.Mcp.Server.csproj"
+      ]
+    }
+  }
+}
